@@ -1,0 +1,14 @@
+# TubeVault .htaccess configuration for cPanel / Apache Shared Hosting
+# Digunakan untuk reverse proxy ke aplikasi Node.js atau fallback routing SPA
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Jangan rewrite jika file atau direktori fisik ada
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+
+  # Arahkan semua request non-file ke server Node.js / SPA index.html
+  RewriteRule ^(.*)$ /index.html [L,QSA]
+</IfModule>
