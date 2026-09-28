@@ -1,0 +1,6 @@
+{
+  "name": "TubeVault - YouTube Video Saver & Offline Local Player",
+  "description": "Aplikasi penyimpan video YouTube langsung ke folder lokal atau tonton offline lewat Google Video CDN vault pada penyimpanan perangkat.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
