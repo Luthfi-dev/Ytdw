@@ -18,7 +18,8 @@ import {
   Clock,
   Eye,
   Info,
-  Sparkles
+  Sparkles,
+  Globe
 } from 'lucide-react';
 import { copyToClipboard, isFileSystemAccessSupported, getCurrentFolderName } from '../services/folderSaver';
 
@@ -311,7 +312,7 @@ export const VideoInspector: React.FC<VideoInspectorProps> = ({
         <div className="flex items-center justify-between text-xs">
           <div className="flex items-center gap-1.5 text-slate-300 font-semibold">
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>Link Google Video CDN (Direct Offline Stream)</span>
+            <span>Link Direct Stream Video (Google Video CDN Stream)</span>
           </div>
           <button
             type="button"
@@ -319,7 +320,7 @@ export const VideoInspector: React.FC<VideoInspectorProps> = ({
             className="inline-flex items-center gap-1 text-[11px] text-amber-400 hover:text-amber-300 underline cursor-pointer"
           >
             <Info className="w-3 h-3" />
-            <span>Cara Tonton Offline CDN</span>
+            <span>Panduan Streaming</span>
           </button>
         </div>
 
@@ -327,6 +328,18 @@ export const VideoInspector: React.FC<VideoInspectorProps> = ({
           <div className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs font-mono text-slate-300 truncate select-all">
             {selectedFormat.googleCdnLink || videoInfo.googleVideoCdnUrl}
           </div>
+
+          <a
+            href={selectedFormat.googleCdnLink || videoInfo.googleVideoCdnUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg transition-colors shrink-0"
+            title="Buka dan tonton stream di tab baru tanpa 403"
+          >
+            <Globe className="w-3.5 h-3.5 text-amber-400" />
+            <span>Buka di Tab Baru</span>
+          </a>
+
           <button
             type="button"
             onClick={handleCopyCdn}
@@ -338,7 +351,7 @@ export const VideoInspector: React.FC<VideoInspectorProps> = ({
             title="Salin tautan CDN untuk VLC / MPV / Browser"
           >
             {copiedCdn ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-            <span>{copiedCdn ? 'Tersalin' : 'Salin CDN'}</span>
+            <span>{copiedCdn ? 'Tersalin' : 'Salin Link'}</span>
           </button>
         </div>
       </div>

@@ -52,87 +52,187 @@ function extractYouTubeId(urlOrId) {
   return null;
 }
 
-// Popular YouTube videos metadata dictionary
-const KNOWN_VIDEOS_MAP = {
-  'dQw4w9WgXcQ': {
-    title: 'Rick Astley - Never Gonna Give You Up (Official Music Video)',
-    author_name: 'Rick Astley',
-    author_url: 'https://www.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw',
-    duration: 213,
-    views: 1540000000,
-    description: 'The official video for “Never Gonna Give You Up” by Rick Astley. Stream & download here.',
-    publishDate: '2009-10-25',
-    tags: ['Music', 'Pop', '80s', 'Official Video']
-  },
-  'jNQXAC9IVRw': {
-    title: 'Me at the zoo',
-    author_name: 'jawed',
-    author_url: 'https://www.youtube.com/channel/UC4QobU6STFB0P71PMvOGN5A',
-    duration: 19,
-    views: 312000000,
-    description: 'The first video on YouTube, uploaded at 8:27PM on Saturday April 23rd, 2005.',
-    publishDate: '2005-04-23',
-    tags: ['History', 'First Video', 'Zoo']
-  },
-  'kJQP7kiw5Fk': {
-    title: 'Luis Fonsi - Despacito ft. Daddy Yankee',
-    author_name: 'Luis Fonsi',
-    author_url: 'https://www.youtube.com/channel/UCxoq-PAQeAdTu3daPn-0T0g',
-    duration: 282,
-    views: 8400000000,
-    description: '“Despacito” disponible ya en todas las plataformas digitales.',
-    publishDate: '2017-01-12',
-    tags: ['Music', 'Latin', 'Pop', 'Despacito']
-  },
-  'L_LUpnjgPso': {
-    title: 'Relaxing 4K Nature Video - Peaceful Forest & Mountain Stream',
-    author_name: 'Nature Relaxation Films',
-    author_url: 'https://www.youtube.com/@NatureRelaxation',
-    duration: 600,
-    views: 45200000,
-    description: 'Ultra HD 4K relaxing nature footage with soothing ambient stream sounds for sleep and study.',
-    publishDate: '2023-05-18',
-    tags: ['4K Nature', 'Relaxation', 'Meditation', 'Sleep']
-  },
-  '9bZkp7q19f0': {
-    title: 'PSY - GANGNAM STYLE(강남스타일) M/V',
-    author_name: 'officialpsy',
-    author_url: 'https://www.youtube.com/channel/UCrDkAvwZum-UTjHmzDI2iIw',
-    duration: 253,
-    views: 5120000000,
-    description: 'PSY - GANGNAM STYLE(강남스타일) Official Music Video.',
-    publishDate: '2012-07-15',
-    tags: ['K-Pop', 'PSY', 'Gangnam Style']
+// In-memory stream cache
+const STREAM_CACHE = new Map();
+
+// Resolve real YouTube video stream URLs from YouTube Innertube / Piped API
+async function extractRealYouTubeStreams(videoId) {
+  const cached = STREAM_CACHE.get(videoId);
+  if (cached && cached.expireAt > Date.now()) {
+    return cached;
   }
-};
 
-// High-reliability verified public H.264 MP4 & MP3 audio stream URLs that never return 403 and are 100% playable
-const VERIFIED_MEDIA_STREAMS = {
-  video_1080p: [
-    'https://raw.githubusercontent.com/mediaelement/mediaelement-files/master/big_buck_bunny.mp4',
-    'https://www.w3schools.com/html/mov_bbb.mp4',
-    'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4'
-  ],
-  video_720p: [
-    'https://www.w3schools.com/html/mov_bbb.mp4',
-    'https://raw.githubusercontent.com/mediaelement/mediaelement-files/master/big_buck_bunny.mp4',
-    'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4'
-  ],
-  video_480p: [
-    'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
-    'https://www.w3schools.com/html/mov_bbb.mp4'
-  ],
-  video_360p: [
-    'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
-    'https://www.w3schools.com/html/mov_bbb.mp4'
-  ],
-  audio_mp3: [
-    'https://interactive-examples.mdn.mozilla.net/media/cc0-audio/t-rex-roar.mp3',
-    'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3'
-  ]
-};
+  let title = 'YouTube Video';
+  let authorName = 'YouTube Creator';
+  let authorUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  let duration = 210;
+  let views = 1250000;
+  let description = '';
+  let publishDate = new Date().toISOString().split('T')[0];
+  let tags = [];
+  const realFormats = [];
 
-// API: Get YouTube info
+  // 1. Try YouTube Innertube Android Client API
+  try {
+    const innertubeResp = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'com.google.android.youtube/19.19.38 (Linux; U; Android 11; en_US) gzip',
+        'X-YouTube-Client-Name': '3',
+        'X-YouTube-Client-Version': '19.19.38'
+      },
+      body: JSON.stringify({
+        videoId,
+        context: {
+          client: {
+            clientName: 'ANDROID',
+            clientVersion: '19.19.38',
+            androidSdkVersion: 30,
+            hl: 'id',
+            gl: 'ID'
+          }
+        }
+      })
+    });
+
+    if (innertubeResp.ok) {
+      const data = await innertubeResp.json();
+      const details = data.videoDetails;
+      if (details) {
+        if (details.title) title = details.title;
+        if (details.author) authorName = details.author;
+        if (details.lengthSeconds) duration = parseInt(details.lengthSeconds, 10);
+        if (details.viewCount) views = parseInt(details.viewCount, 10);
+        if (details.shortDescription) description = details.shortDescription;
+      }
+
+      const streamingData = data.streamingData;
+      if (streamingData) {
+        const combined = [...(streamingData.formats || []), ...(streamingData.adaptiveFormats || [])];
+        for (const fmt of combined) {
+          if (fmt.url) {
+            const isAudio = fmt.mimeType && fmt.mimeType.includes('audio');
+            const approxMB = fmt.contentLength
+              ? Math.round((parseInt(fmt.contentLength, 10) / (1024 * 1024)) * 10) / 10
+              : Math.round((duration * (fmt.bitrate ? fmt.bitrate / (8 * 1024 * 1024) : 0.2)) * 10) / 10;
+
+            realFormats.push({
+              itag: fmt.itag,
+              quality: fmt.qualityLabel || (isAudio ? 'Audio MP3' : `${fmt.height || 360}p`),
+              label: fmt.qualityLabel ? `${fmt.qualityLabel} (${fmt.fps || 30}fps)` : (isAudio ? 'Audio MP3 HQ' : 'MP4 Video'),
+              format: isAudio ? 'MP3' : 'MP4',
+              type: isAudio ? 'audio' : 'video',
+              approxSizeMB: approxMB || 10,
+              fps: fmt.fps || 30,
+              hasAudio: !isAudio ? (fmt.audioChannels ? true : false) : true,
+              directCdnUrl: fmt.url,
+              bitrate: fmt.bitrate
+            });
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Innertube resolution error:', err.message);
+  }
+
+  // 2. Fallback to Piped API
+  if (realFormats.length === 0) {
+    const pipedInstances = [
+      `https://api.piped.private.coffee/streams/${videoId}`,
+      `https://pipedapi.kavin.rocks/streams/${videoId}`,
+      `https://invidious.nerdvpn.de/api/v1/videos/${videoId}`
+    ];
+
+    for (const endpoint of pipedInstances) {
+      try {
+        const resp = await fetch(endpoint, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.title) title = data.title;
+          if (data.uploader) authorName = data.uploader;
+          if (data.duration) duration = data.duration;
+          if (data.views) views = data.views;
+
+          const videoStreams = data.videoStreams || [];
+          const audioStreams = data.audioStreams || [];
+
+          for (const s of videoStreams) {
+            if (s.url && s.format === 'MPEG_4') {
+              realFormats.push({
+                itag: s.itag || 22,
+                quality: s.quality || `${s.height || 720}p`,
+                label: `${s.quality || '720p HD'} (MP4 Video)`,
+                format: 'MP4',
+                type: 'video',
+                approxSizeMB: s.contentLength ? Math.round((s.contentLength / (1024 * 1024)) * 10) / 10 : 25,
+                fps: s.fps || 30,
+                hasAudio: true,
+                directCdnUrl: s.url
+              });
+            }
+          }
+
+          for (const a of audioStreams) {
+            if (a.url) {
+              realFormats.push({
+                itag: a.itag || 140,
+                quality: 'Audio MP3',
+                label: `Audio MP3 (${a.quality || '128k'})`,
+                format: 'MP3',
+                type: 'audio',
+                approxSizeMB: a.contentLength ? Math.round((a.contentLength / (1024 * 1024)) * 10) / 10 : 8,
+                fps: 0,
+                hasAudio: true,
+                directCdnUrl: a.url
+              });
+            }
+          }
+          if (realFormats.length > 0) break;
+        }
+      } catch (err) {
+        console.warn(`Mirror error ${endpoint}:`, err.message);
+      }
+    }
+  }
+
+  // 3. Fallback to YouTube oEmbed metadata if needed
+  if (title === 'YouTube Video') {
+    try {
+      const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+      const oembedResp = await fetch(oembedUrl);
+      if (oembedResp.ok) {
+        const odata = await oembedResp.json();
+        if (odata.title) title = odata.title;
+        if (odata.author_name) authorName = odata.author_name;
+        if (odata.author_url) authorUrl = odata.author_url;
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  const result = {
+    title,
+    authorName,
+    authorUrl,
+    duration,
+    views,
+    description,
+    publishDate,
+    tags,
+    formats: realFormats,
+    expireAt: Date.now() + 1000 * 60 * 30
+  };
+
+  STREAM_CACHE.set(videoId, result);
+  return result;
+}
+
+// API: Get YouTube info & real formats
 app.get('/api/yt/info', async (req, res) => {
   try {
     const rawUrl = req.query.url;
@@ -145,53 +245,12 @@ app.get('/api/yt/info', async (req, res) => {
       return res.status(400).json({ error: 'URL YouTube tidak valid. Harap masukkan tautan video, shorts, atau ID YouTube yang benar.' });
     }
 
-    let title = 'YouTube Video';
-    let authorName = 'YouTube Creator';
-    let authorUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    let duration = 210;
-    let views = 1250000;
-    let description = 'Video YouTube disimpan melalui TubeVault untuk ditonton secara offline.';
-    let publishDate = new Date().toISOString().split('T')[0];
-    let tags = ['YouTube', 'Video'];
+    const data = await extractRealYouTubeStreams(videoId);
 
-    // Check known dictionary first
-    if (KNOWN_VIDEOS_MAP[videoId]) {
-      const known = KNOWN_VIDEOS_MAP[videoId];
-      title = known.title;
-      authorName = known.author_name;
-      authorUrl = known.author_url;
-      duration = known.duration;
-      views = known.views;
-      description = known.description;
-      publishDate = known.publishDate;
-      tags = known.tags;
-    } else {
-      // Try fetching official YouTube oEmbed endpoint
-      try {
-        const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 4000);
-        
-        const resp = await fetch(oembedUrl, {
-          signal: controller.signal,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-          }
-        });
-        clearTimeout(timeoutId);
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+    const host = req.headers['x-forwarded-host'] || req.get('host') || `localhost:${PORT}`;
+    const baseUrl = `${protocol}://${host}`;
 
-        if (resp.ok) {
-          const data = await resp.json();
-          if (data.title) title = data.title;
-          if (data.author_name) authorName = data.author_name;
-          if (data.author_url) authorUrl = data.author_url;
-        }
-      } catch (err) {
-        console.warn('oEmbed fetch error (falling back to generated metadata):', err);
-      }
-    }
-
-    // High quality thumbnails
     const thumbnails = {
       maxres: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
       hq: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
@@ -199,92 +258,53 @@ app.get('/api/yt/info', async (req, res) => {
       default: `https://i.ytimg.com/vi/${videoId}/default.jpg`
     };
 
-    // Construct realistic Google Video CDN direct playback stream link
-    const cdnServerId = Math.floor(Math.random() * 4) + 1;
-    const expireTimestamp = Math.floor(Date.now() / 1000) + 86400 * 3;
-    const googleVideoCdnUrl = `https://rr${cdnServerId}---sn-n4v7sney.googlevideo.com/videoplayback?expire=${expireTimestamp}&ei=TubeVault_Stream_${videoId}&ip=0.0.0.0&id=o-A${videoId.slice(0, 6)}&itag=22&source=youtube&requiressl=yes&ratebypass=yes&mime=video%2Fmp4&gir=yes&clen=18492019&lmt=1700000000&dur=${duration}.000&c=ANDROID&cver=19.00.00`;
+    const directStreamUrl = `${baseUrl}/api/yt/stream?id=${videoId}&itag=22`;
 
-    // Available quality formats
-    const formats = [
-      {
-        itag: 137,
-        quality: '1080p',
-        label: '1080p Full HD (60 FPS)',
-        format: 'MP4',
-        type: 'video',
-        approxSizeMB: Math.round((duration * 0.42) * 10) / 10,
-        fps: 60,
-        hasAudio: true,
-        streamUrl: VERIFIED_MEDIA_STREAMS.video_1080p[0],
-        googleCdnLink: `${googleVideoCdnUrl}&itag=137&fps=60`
-      },
-      {
-        itag: 22,
-        quality: '720p',
-        label: '720p HD (High Definition)',
-        format: 'MP4',
-        type: 'video',
-        approxSizeMB: Math.round((duration * 0.25) * 10) / 10,
-        fps: 30,
-        hasAudio: true,
-        streamUrl: VERIFIED_MEDIA_STREAMS.video_720p[0],
-        googleCdnLink: `${googleVideoCdnUrl}&itag=22`
-      },
-      {
-        itag: 135,
-        quality: '480p',
-        label: '480p SD (Standard Quality)',
-        format: 'MP4',
-        type: 'video',
-        approxSizeMB: Math.round((duration * 0.15) * 10) / 10,
-        fps: 30,
-        hasAudio: true,
-        streamUrl: VERIFIED_MEDIA_STREAMS.video_480p[0],
-        googleCdnLink: `${googleVideoCdnUrl}&itag=135`
-      },
-      {
-        itag: 18,
-        quality: '360p',
-        label: '360p (Hemat Kuota / Cepat)',
-        format: 'MP4',
-        type: 'video',
-        approxSizeMB: Math.round((duration * 0.09) * 10) / 10,
-        fps: 30,
-        hasAudio: true,
-        streamUrl: VERIFIED_MEDIA_STREAMS.video_360p[0],
-        googleCdnLink: `${googleVideoCdnUrl}&itag=18`
-      },
-      {
-        itag: 140,
-        quality: 'Audio MP3',
-        label: 'MP3 Audio (320 kbps HQ)',
-        format: 'MP3',
-        type: 'audio',
-        approxSizeMB: Math.round((duration * 0.04) * 10) / 10,
-        fps: 0,
-        hasAudio: true,
-        streamUrl: VERIFIED_MEDIA_STREAMS.audio_mp3[0],
-        googleCdnLink: `${googleVideoCdnUrl}&itag=140&mime=audio%2Fmp4`
-      }
+    const qualityPresets = [
+      { itag: 137, quality: '1080p', label: '1080p Full HD (60 FPS)', format: 'MP4', type: 'video', approxSizeMB: Math.round((data.duration * 0.42) * 10) / 10, fps: 60 },
+      { itag: 22, quality: '720p', label: '720p HD (High Definition)', format: 'MP4', type: 'video', approxSizeMB: Math.round((data.duration * 0.25) * 10) / 10, fps: 30 },
+      { itag: 135, quality: '480p', label: '480p SD (Standard Quality)', format: 'MP4', type: 'video', approxSizeMB: Math.round((data.duration * 0.15) * 10) / 10, fps: 30 },
+      { itag: 18, quality: '360p', label: '360p (Hemat Kuota / Cepat)', format: 'MP4', type: 'video', approxSizeMB: Math.round((data.duration * 0.09) * 10) / 10, fps: 30 },
+      { itag: 140, quality: 'Audio MP3', label: 'MP3 Audio (320 kbps HQ)', format: 'MP3', type: 'audio', approxSizeMB: Math.round((data.duration * 0.04) * 10) / 10, fps: 0 }
     ];
+
+    const formattedList = qualityPresets.map((preset) => {
+      const match = data.formats.find((f) => f.quality === preset.quality || f.itag === preset.itag);
+      const streamProxyUrl = `${baseUrl}/api/yt/stream?id=${videoId}&itag=${preset.itag}&quality=${encodeURIComponent(preset.quality)}`;
+      const directCdn = match?.directCdnUrl || streamProxyUrl;
+
+      return {
+        itag: preset.itag,
+        quality: preset.quality,
+        label: match?.label || preset.label,
+        format: preset.format,
+        type: preset.type,
+        approxSizeMB: match?.approxSizeMB || preset.approxSizeMB,
+        fps: match?.fps || preset.fps,
+        hasAudio: true,
+        streamUrl: streamProxyUrl,
+        googleCdnLink: streamProxyUrl,
+        rawCdnUrl: directCdn
+      };
+    });
 
     res.json({
       success: true,
       videoId,
       originalUrl: rawUrl,
-      title,
-      authorName,
-      authorUrl,
-      duration,
-      formattedDuration: formatSecondsToTime(duration),
-      views,
-      formattedViews: formatViews(views),
-      description,
-      publishDate,
-      tags,
+      title: data.title,
+      authorName: data.authorName,
+      authorUrl: data.authorUrl,
+      duration: data.duration,
+      formattedDuration: formatSecondsToTime(data.duration),
+      views: data.views,
+      formattedViews: formatViews(data.views),
+      description: data.description,
+      publishDate: data.publishDate,
+      tags: data.tags,
       thumbnails,
-      googleVideoCdnUrl,
-      formats
+      googleVideoCdnUrl: directStreamUrl,
+      formats: formattedList
     });
   } catch (error) {
     console.error('Error fetching YouTube info:', error);
@@ -292,55 +312,63 @@ app.get('/api/yt/info', async (req, res) => {
   }
 });
 
-// Helper to fetch verified playable video/audio stream
-async function fetchPlayableMedia(primaryUrl, isAudio) {
-  const list = isAudio
-    ? VERIFIED_MEDIA_STREAMS.audio_mp3
-    : [
-        primaryUrl,
-        ...VERIFIED_MEDIA_STREAMS.video_720p,
-        ...VERIFIED_MEDIA_STREAMS.video_1080p
-      ];
+// Stream endpoint: Streams the ACTUAL YouTube video with Range and proper headers
+app.get('/api/yt/stream', async (req, res) => {
+  const videoId = req.query.id || '';
+  const itag = parseInt(req.query.itag || '22', 10);
+  const quality = req.query.quality || '';
+  const isDownload = req.query.download === '1';
 
-  for (const url of list) {
-    try {
-      const resp = await fetch(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          'Accept': '*/*'
-        }
-      });
-      if (resp.ok || resp.status === 206) {
-        return resp;
-      }
-    } catch (err) {
-      console.warn(`Mirror fetch error on ${url}:`, err.message);
-    }
+  if (!videoId) {
+    return res.status(400).send('Parameter id video YouTube diperlukan.');
   }
-  return null;
-}
-
-// Proxy route to stream video/audio chunk with valid MP4 / MP3 headers
-app.get('/api/yt/proxy-media', async (req, res) => {
-  const mediaUrl = req.query.url || '';
-  const fileName = req.query.filename || 'youtube_video.mp4';
-  const isAudio = fileName.toLowerCase().endsWith('.mp3');
 
   try {
-    const upstream = await fetchPlayableMedia(mediaUrl, isAudio);
+    const data = await extractRealYouTubeStreams(videoId);
+    let targetStreamUrl = '';
 
-    if (upstream && upstream.ok && upstream.body) {
-      const mime = isAudio ? 'audio/mp3' : 'video/mp4';
-      const contentLength = upstream.headers.get('content-length');
+    const matched = data.formats.find((f) => f.itag === itag || f.quality === quality) || data.formats[0];
+    if (matched && matched.directCdnUrl) {
+      targetStreamUrl = matched.directCdnUrl;
+    }
 
-      res.setHeader('Content-Type', mime);
-      res.setHeader('Accept-Ranges', 'bytes');
-      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
-      if (contentLength) res.setHeader('Content-Length', contentLength);
+    const isAudio = matched?.type === 'audio' || quality.toLowerCase().includes('mp3');
+    const mime = isAudio ? 'audio/mp3' : 'video/mp4';
+    const cleanFilename = `${data.title.replace(/[\\/:*?"<>|]/g, '_').trim()}.${isAudio ? 'mp3' : 'mp4'}`;
 
-      res.status(200);
+    if (!targetStreamUrl) {
+      return res.redirect(`https://www.youtube.com/watch?v=${videoId}`);
+    }
 
-      const reader = upstream.body.getReader();
+    const range = req.headers.range;
+    const fetchHeaders = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      'Accept': '*/*',
+      'Referer': 'https://www.youtube.com/'
+    };
+    if (range) {
+      fetchHeaders['Range'] = range;
+    }
+
+    const cdnResp = await fetch(targetStreamUrl, { headers: fetchHeaders });
+
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Accept-Ranges', 'bytes');
+    if (isDownload) {
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(cleanFilename)}"`);
+    } else {
+      res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(cleanFilename)}"`);
+    }
+
+    const contentLength = cdnResp.headers.get('content-length');
+    const contentRange = cdnResp.headers.get('content-range');
+    if (contentLength) res.setHeader('Content-Length', contentLength);
+    if (contentRange) res.setHeader('Content-Range', contentRange);
+
+    res.status(cdnResp.status || 200);
+
+    if (cdnResp.body) {
+      const reader = cdnResp.body.getReader();
       const pump = async () => {
         while (true) {
           const { done, value } = await reader.read();
@@ -351,19 +379,69 @@ app.get('/api/yt/proxy-media', async (req, res) => {
       };
 
       return pump().catch(err => {
-        console.error('Proxy pump error:', err);
+        console.error('Stream pump error:', err);
         res.end();
       });
     }
 
-    const fallbackUrl = isAudio
-      ? VERIFIED_MEDIA_STREAMS.audio_mp3[0]
-      : VERIFIED_MEDIA_STREAMS.video_720p[0];
-    return res.redirect(fallbackUrl);
+    res.end();
   } catch (err) {
-    console.error('Proxy media handler error:', err);
-    res.status(500).send('Error streaming media file');
+    console.error('Stream error:', err);
+    res.status(500).send('Gagal memutar stream video: ' + err.message);
   }
+});
+
+// Proxy download route for client fetch
+app.get('/api/yt/proxy-media', async (req, res) => {
+  const urlParam = req.query.url || '';
+  const fileName = req.query.filename || 'video.mp4';
+  const isAudio = fileName.toLowerCase().endsWith('.mp3');
+
+  if (!urlParam) {
+    return res.status(400).send('Missing media URL');
+  }
+
+  if (urlParam.startsWith('/api/yt/stream') || urlParam.startsWith('http://') || urlParam.startsWith('https://')) {
+    try {
+      const range = req.headers.range;
+      const headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': '*/*'
+      };
+      if (range) headers['Range'] = range;
+
+      const resp = await fetch(urlParam.startsWith('http') ? urlParam : `http://localhost:${PORT}${urlParam}`, { headers });
+      if (resp.ok || resp.status === 206) {
+        const mime = isAudio ? 'audio/mp3' : 'video/mp4';
+        const cl = resp.headers.get('content-length');
+        const cr = resp.headers.get('content-range');
+
+        res.setHeader('Content-Type', mime);
+        res.setHeader('Accept-Ranges', 'bytes');
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+        if (cl) res.setHeader('Content-Length', cl);
+        if (cr) res.setHeader('Content-Range', cr);
+        res.status(resp.status);
+
+        if (resp.body) {
+          const reader = resp.body.getReader();
+          const pump = async () => {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              res.write(value);
+            }
+            res.end();
+          };
+          return pump().catch(() => res.end());
+        }
+      }
+    } catch (e) {
+      console.warn('Proxy fetch error:', e.message);
+    }
+  }
+
+  res.status(404).send('Stream not available');
 });
 
 // Health check endpoint
@@ -405,14 +483,13 @@ async function startServer() {
       });
       app.use(vite.middlewares);
     } catch (err) {
-      console.warn('Vite middleware not available, falling back to static serve:', err.message);
+      console.warn('Vite middleware fallback:', err.message);
       app.use(express.static(distPath));
       app.get('*', (req, res) => {
         res.sendFile(path.resolve(distPath, 'index.html'));
       });
     }
   } else {
-    // Serve static files in production (shared hosting)
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(path.resolve(distPath, 'index.html'));
